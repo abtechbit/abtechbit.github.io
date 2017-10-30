@@ -1,0 +1,61 @@
+<html xmlns:v-on="http://www.w3.org/1999/xhtml" xmlns:v-bind="http://www.w3.org/1999/xhtml">
+<head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+    <meta content="utf-8" http-equiv="encoding">
+</head>
+
+<body>
+
+    <form id="app">
+
+        <input type="file" id="input" v-on:change="handleFiles">
+
+        <table>
+            <tr><td>
+                <account-filter v-model="filter" @input="calculateBalance"></account-filter>
+            </td></tr>
+            <tr><td>
+                <accounts v-bind:accounts="accountTreeProp()"> </accounts>
+            </td></tr>
+        </table>
+
+        <table>
+          <tr v-for="t in transactions()">
+            <td>
+              {{t.date.year + '/' + t.date.month + '/' + t.date.day}}
+            </td>
+            <td>
+              {{parseFloat(t.posting[0].amount.toFixed(2)).toLocaleString('en-CA', { style: 'currency', currency: 'CAD' })}}
+            </td>
+            <td>
+              {{t.payee}}
+            </td>
+            <td>
+              {{t.posting[0].account}}
+            </td>
+          </tr>
+        </table>
+
+    </form>
+
+
+    <script id="account-filter-template" type="text/template">
+      <div>
+        <label>Account filter: </label>
+        <input type="text" @change="updateValue" v-model="value"/>
+      </div>
+    </script>
+    <script id="accounts-template" type="text/template">
+        <ul>
+            <li v-for="(value, key) in level()" >
+                <a href="#" >{{ accountDisplay(value) }}</a>
+                <div v-if="value.accounts != null && Object.keys(value.accounts).length > 0">
+                    <accounts v-bind:accounts="value.accounts"> </accounts>
+                </div>
+            </li>
+        </ul>
+    </script>
+
+    <script src="_js/bundle.js"></script>
+</body>
+</html>
