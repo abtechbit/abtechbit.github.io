@@ -185,7 +185,7 @@ process.chdir = function (dir) {
 process.umask = function() { return 0; };
 
 },{}],2:[function(require,module,exports){
-  let Generator = {
+ let Generator = {
   payees : [
     {
       payee: 'PartyShack',
@@ -277,6 +277,25 @@ process.umask = function() { return 0; };
       }
     },
   ],
+
+  generateYearJournal: function(){
+    const monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let today = new Date();
+    let todayMonth = today.getMonth() + 1;
+    let todayDay = today.getDate();
+    let todayYear = today.getFullYear();
+
+    let text = '';
+    for(let month = 0; month < todayMonth; ++month){
+      for(let day = 1; day <= monthDays[month]; day++){
+        if(month == todayMonth && day > todayDay){
+          break;
+        }
+        text += this.transactionsDay(todayYear, month + 1, day);
+      }
+    }
+    return text;
+  },
 
   transactionsDay: function(year, month, day){
     let t = '';
@@ -35904,47 +35923,109 @@ module.exports = Vue.component('account-filter', {
 });
 },{"vue":8}],17:[function(require,module,exports){
 var Vue = require('vue');
+var balanceTreeHelper = require('../util/balance-filter-helper');
+
 
 module.exports = Vue.component('accounts', {
   template: '#accounts-template',
-  props: ['accounts'],
+  props: ['filter', 'journal', 'accounts'],
   data: function(){
     return {
-      //level: this.accounts
+      accountTree : {}
     };
   },
-  methods: {
-    level: function(){
-      return this.accounts;
+  beforeMount: function(){
+      this.updateAccounts();
+  },
+  watch: {
+    filter: {
+      handler:function (){
+        this.updateAccounts();
+      },
+      deep: true
     },
+    journal: {
+      handler:function (){
+        this.updateAccounts();
+      },
+      deep: true
+    },
+  },
+  methods: {
+    updateAccounts: function(){
+      if(this.journal == null){
+        return;
+      }
+      this.accountTree = balanceTreeHelper.filteredBalanceTree(this.journal, this.filter);
+      if(this.accountTree == null){
+        this.accountTree = {};
+      }
+    },
+
+    level: function(){
+      return this.journal == null ? this.accounts : this.accountTree;
+    },
+
     accountDisplay: function(value){
       return `${value.balance == null ? '' : value.balance.toLocaleString('en-CA', { style: 'currency', currency: 'CAD' })} ${value.name }`;
     }
   }
 });
-},{"vue":8}],18:[function(require,module,exports){
+
+},{"../util/balance-filter-helper":24,"vue":8}],18:[function(require,module,exports){
 var Vue = require('vue');
 var c3 = require('c3');
 
-module.exports = Vue.component('monthly-chart', {
-  template: '#monthly-chart-template',
-  props: ['columnData'],
-  data: function(){
-    return {};
-  },
+var balanceFilterHelper = require('../util/balance-filter-helper');
 
+module.exports = Vue.component('monthly-chart', {
+  template: '#chart-template',
+  props: ['filter', 'journal'],
+  data: function(){
+    return {
+      columnData: []
+    };
+  },
+  beforeMount: function(){
+      this.updateChart();
+  },
   watch: {
-    columnData: function () {
-      var self = this;
-      Vue.nextTick(function () {
-        self.createChart()
-      });
-    }
+    filter: {
+      handler:function (){
+        this.updateChart();
+      },
+      deep: true
+    },
+    journal: {
+      handler:function (){
+        this.updateChart();
+      },
+      deep: true
+    },
   },
   methods: {
     uniqId: function(){
       return 'monthly-chart-' + this._uid;
     },
+
+    getMonthlyBalance: function(month){
+      var filterCopy = Object.assign({}, this.filter);
+      filterCopy.month = month;
+      return balanceFilterHelper.filteredMonthlyBalance(this.journal, filterCopy);
+    },
+
+    updateChart: function(){
+      let data = [this.filter.account];
+      for(let i = 1; i <= 12; ++i){
+        data.push(Math.abs(this.getMonthlyBalance(i)));
+      }
+      this.columnData = [data];
+      let self = this;
+      Vue.nextTick(function () {
+        self.createChart();
+      });
+    },
+
     createChart: function(){
       var chart = c3.generate({
           bindto: '#' + this.uniqId(),
@@ -35966,199 +36047,315 @@ module.exports = Vue.component('monthly-chart', {
           }
       });
     }
+  }
+});
+
+},{"../util/balance-filter-helper":24,"c3":4,"vue":8}],19:[function(require,module,exports){
+var Vue = require('vue');
+var c3 = require('c3');
+
+var balanceTreeHelper = require('../util/balance-filter-helper');
+
+module.exports = Vue.component('total-monthly-chart', {
+  template: '#chart-template',
+  props: ['journal'],
+  data: function(){
+    return {
+      columnData: []
+    };
   },
   beforeMount: function(){
-      var self = this;
+      this.updateChart();
+  },
+  watch: {
+    journal: {
+      handler:function (){
+        this.updateChart();
+      },
+      deep: true
+    },
+  },
+  methods: {
+    uniqId: function(){
+      return 'monthly-chart-' + this._uid;
+    },
+
+    getMonthlyBalance: function(account, month){
+      return balanceTreeHelper.filteredMonthlyBalance(this.journal, {
+        account: account,
+        month: month
+      });
+    },
+
+    updateChart: function(){
+      let dataExpense = ['Expense'];
+      let dataIncome = ['Income'];
+      for(let i = 1; i <= 12; ++i){
+        dataExpense.push(Math.abs(this.getMonthlyBalance('Expense', i)));
+        dataIncome.push(Math.abs(this.getMonthlyBalance('Income', i)));
+      }
+      this.columnData = [dataExpense, dataIncome];
+
+      let self = this;
       Vue.nextTick(function () {
         self.createChart();
       });
-  },
+    },
+
+    createChart: function(){
+      var chart = c3.generate({
+          bindto: '#' + this.uniqId(),
+          data: {
+              columns: this.columnData,
+              labels: true,
+              type: 'bar'
+          },
+          bar: {
+              width: {
+                  ratio: 0.9
+              }
+          },
+          axis: {
+              x: {
+                  type: 'category',
+                  categories: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+              }
+          }
+      });
+    }
+  }
 });
-},{"c3":4,"vue":8}],19:[function(require,module,exports){
-var parser = require('../../src/parser/journal-parser');
-var journal = require('../../src/journal');
-var balancer = require('../../src/balance');
+
+},{"../util/balance-filter-helper":24,"c3":4,"vue":8}],20:[function(require,module,exports){
+var accountNameHelper = require('../util/account-name-helper');
+var balanceFilterHelper = require('../util/balance-filter-helper');
 var Big = require('big.js');
-var sampleGenerator = require('../../generator/generator.util');
-var accountNameHelper = require('./util/account-name-helper');
-var balanceTreeHelper = require('./util/balance-filter-helper');
 
 var Vue = require('vue');
-require('./components/accounts.js');
-require('./components/account-filter.js');
-require('./components/monthly-chart.js');
 
-var app = new Vue({
-  el: '#app',
-  data: {
-    filter:  {
-      account: 'Expenses',
-      month: new Date().getMonth() + 1
+module.exports = Vue.component('transaction-table', {
+  template: '#transaction-table-template',
+  props: ['filter', 'journal'],
+  data: function(){
+    return {
+      transactions: []
+    };
+  },
+  beforeMount: function(){
+      this.updateTransactions();
+  },
+  watch: {
+    filter: {
+      handler:function (){
+        this.updateTransactions();
+      },
+      deep: true
     },
-    accountTree: {},
-    transactions: [],
-    totalInOutData: [],
-    filteredData: []
+    journal: {
+      handler:function (){
+        this.updateTransactions();
+      },
+      deep: true
+    },
   },
   methods: {
-
-    handleFiles : function(e) {
-        var files = e.currentTarget.files;
-        var reader = new FileReader();
-        var self = this;
-
-        reader.onload = function(e) {
-            var text = reader.result
-            self.createJournal(text);
-            self.calculateBalance();
-        }
-        reader.onerror = function(err) {
-            console.log(err, err.loaded, err.loaded === 0);
-            button.removeAttribute("disabled");
-        }
-        reader.readAsText(files[0]);
-    },
-
-    createJournal: function(text){
-        journal.reset();
-
-        parser.reset(text)
-        var chunk;
-        try{
-          while((chunk = parser.next()) != null){
-            journal.add(chunk);
-          }
-        }catch(e){
-          console.log(e);
-          console.log('Failing on line ' + JSON.stringify(e.chunk));
-        }
-    },
-
     updateTransactions: function(){
-      this.transactions = journal.transactions(t => {
-        if(t.type == 'transaction' && t.date.month == this.filter.month){
-          if(this.matchingPosting(t) != null)
-            return true;
-        }
-        return false;
+      this.transactions = this.journal.transactions(t => {
+        return balanceFilterHelper.transactionMatchesFilter(t, this.filter);
       });
       if(this.transactions == null){
         this.transactions = [];
       }
     },
 
-    matchingPosting: function(t){
-      for(let i = 0; i < t.posting.length; ++i){
-        if(t.posting[i].account != null && accountNameHelper.encodeAccountName(t.posting[i].account).toLowerCase().indexOf(this.filter.account.toLowerCase()) >= 0 &&
-          t.posting[i].amount != null){
-            return t.posting[i];
-        }
+    matchingPostings: function(t){
+      return balanceFilterHelper.matchingPostings(t, this.filter);
+    },
+
+    matchingPostingsTotal: function(t){
+      let total = new Big(0.0);
+      let matches = this.matchingPostings(t);
+      for(let i = 0; i < matches.length; ++i){
+        total = total.add(matches[i].amount);
       }
-      return null;
+      return this.formattedAmount(total);
     },
 
-    matchingTxnPosting: function(t){
-      let mp = this.matchingPosting(t);
-      return mp == null ? {amount: 0.0, account: []} : mp;
+    formattedAmount: function(v){
+      let value = v == null || v.toFixed == null ? 0.00 : v.toFixed(2);
+      return parseFloat(value).toLocaleString('en-CA', { style: 'currency', currency: 'CAD' })
     },
 
-    updateAccounts: function(){
-      this.accountTree = balanceTreeHelper.filteredBalanceTree(journal, this.filter);
-      if(this.accountTree == null){
-        this.accountTree = {};
-      }
+    formattedAccount: function(account){
+      return accountNameHelper.encodeAccountName(account);
     },
 
-    calculateBalance: function(){
-      this.updateTransactions();
-      this.updateAccounts();
-      this.createChart();
-      this.createChartFiltered();
+    txnWeekNumber: function(t){
+      let txnDate = new Date(t.date.year, t.date.month - 1, t.date.day)
+      return balanceFilterHelper.getWeekNumber(txnDate).week;
+    },
+  }
+});
+
+},{"../util/account-name-helper":23,"../util/balance-filter-helper":24,"big.js":3,"vue":8}],21:[function(require,module,exports){
+var Vue = require('vue');
+var c3 = require('c3');
+var balanceFilterHelper = require('../util/balance-filter-helper');
+
+module.exports = Vue.component('weekly-chart', {
+  template: '#chart-template',
+  props: ['filter', 'journal'],
+  data: function(){
+    return {
+      columnData: []
+    };
+  },
+  beforeMount: function(){
+      this.updateChart();
+  },
+  watch: {
+    filter: {
+      handler:function (){
+        this.updateChart();
+      },
+      deep: true
+    },
+    journal: {
+      handler:function (){
+        this.updateChart();
+      },
+      deep: true
+    },
+  },
+  methods: {
+    uniqId: function(){
+      return 'weekly-chart-' + this._uid;
     },
 
-    generateJournal: function(){
-      const monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-      let today = new Date();
-      let todayMonth = today.getMonth() + 1;
-      let todayDay = today.getDate();
-      let todayYear = today.getFullYear();
-
-      let text = '';
-      for(let month = 0; month < todayMonth; ++month){
-        for(let day = 1; day <= monthDays[month]; day++){
-          if(month == todayMonth && day > todayDay){
-            break;
-          }
-          text += sampleGenerator.transactionsDay(todayYear, month + 1, day);
-        }
-      }
-      return text;
+    getWeeklyBalance: function(week){
+      var filterCopy = Object.assign({}, this.filter);
+      filterCopy.month = undefined;
+      filterCopy.week = week;
+      return balanceFilterHelper.filteredWeeklyBalance(this.journal, filterCopy);
     },
 
-    getMonthlyBalance: function(account, month){
-      return balanceTreeHelper.filteredBalance(journal, {
-        account: account,
-        month: month
-      });
-    },
-
-    createChartFiltered: function(){
+    updateChart: function(){
       let data = [this.filter.account];
-      for(let i = 1; i <= 12; ++i){
-        data.push(this.getMonthlyBalance(this.filter.account, i));
+      for(let i = 1; i <= 52; ++i){
+        data.push(this.getWeeklyBalance(i));
       }
-      this.filteredData = [data];
+      this.columnData = [data];
+      let self = this;
+      Vue.nextTick(function () {
+        self.createChart();
+      });
     },
 
     createChart: function(){
-      let dataExpense = ['Expense'];
-      let dataIncome = ['Income'];
-      for(let i = 1; i <= 12; ++i){
-        dataExpense.push(this.getMonthlyBalance('Expense', i));
-        dataIncome.push(this.getMonthlyBalance('Income', i));
-      }
-      this.totalInOutData = [dataExpense, dataIncome];
+      var catIds = [];
+      for(var i = 1; i <= 52; ++i)
+        catIds.push(i);
+      var chart = c3.generate({
+          bindto: '#' + this.uniqId(),
+          data: {
+              columns: this.columnData,
+              labels: true,
+              type: 'bar'
+          },
+          bar: {
+              width: {
+                  ratio: 0.9
+              }
+          },
+          axis: {
+              x: {
+                  type: 'category',
+                  categories: catIds
+              }
+          }
+      });
     }
   },
+});
 
+},{"../util/balance-filter-helper":24,"c3":4,"vue":8}],22:[function(require,module,exports){
+var parser = require('../../src/parser/journal-parser');
+var journal = require('../../src/journal');
+var sampleGenerator = require('../../generator/generator.util');
+
+var Vue = require('vue');
+require('./components/accounts.js');
+require('./components/account-filter.js');
+require('./components/total-monthly-chart.js');
+require('./components/monthly-chart.js');
+require('./components/weekly-chart.js');
+require('./components/transaction-table.js');
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    filter:  {
+      account: 'Expenses',
+      month: new Date().getMonth() + 1,
+      payee: ''
+    },
+    journal: journal
+  },
   beforeMount: function(){
       var self = this;
-      var text = this.generateJournal();
+      var text = sampleGenerator.generateYearJournal();
       this.createJournal(text);
-      this.calculateBalance();
+  },
+  methods: {
+
+    handleFiles : function(e) {
+      var files = e.currentTarget.files;
+      var reader = new FileReader();
+      var self = this;
+
+      reader.onload = function(e) {
+          var text = reader.result
+          self.createJournal(text);
+      }
+      reader.onerror = function(err) {
+          console.log(err, err.loaded, err.loaded === 0);
+          button.removeAttribute("disabled");
+      }
+      reader.readAsText(files[0]);
+    },
+
+    createJournal: function(text){
+      journal.reset();
+
+      parser.reset(text)
+      var chunk;
+      try{
+        while((chunk = parser.next()) != null){
+          journal.add(chunk);
+        }
+      }catch(e){
+        console.log(e);
+        console.log('Failing on line ' + JSON.stringify(e.chunk));
+      }
+    },
   },
 })
 
-
-},{"../../generator/generator.util":2,"../../src/balance":9,"../../src/journal":11,"../../src/parser/journal-parser":14,"./components/account-filter.js":16,"./components/accounts.js":17,"./components/monthly-chart.js":18,"./util/account-name-helper":20,"./util/balance-filter-helper":21,"big.js":3,"vue":8}],20:[function(require,module,exports){
+},{"../../generator/generator.util":2,"../../src/journal":11,"../../src/parser/journal-parser":14,"./components/account-filter.js":16,"./components/accounts.js":17,"./components/monthly-chart.js":18,"./components/total-monthly-chart.js":19,"./components/transaction-table.js":20,"./components/weekly-chart.js":21,"vue":8}],23:[function(require,module,exports){
 module.exports = {
-
-  filter: function(name, accounts){
-    let self = this;
-
-    let firstPass = Object.keys(accounts)
-    .filter(a => a.toLowerCase().indexOf(name.toLowerCase()) >= 0)
-    .map(a => accounts[a]);
-
-    let names = new Set();
-    firstPass.forEach(acct => {
-      var parent = [];
-      acct.account.forEach(a => {
-        parent.push(a);
-        names.add(self.encodeAccountName(parent));
-      });
-    });
-
-    return Object.keys(accounts)
-      .filter(a => names.has(a))
-      .map(a => accounts[a]);
-  },
-
   encodeAccountName: function(accountArray){
     return accountArray.join(':');
   },
+
+  accountMatches: function(account, expression){
+    return this.nameMatches(this.encodeAccountName(account), expression.toLowerCase());
+  },
+
+  nameMatches: function(name, expression){
+    return name.toLowerCase().indexOf(expression.toLowerCase()) >= 0;
+  },
 };
-},{}],21:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 var accountNameHelper = require('./account-name-helper');
 var balancer = require('../../../src/balance');
 let Big = require('big.js');
@@ -36166,16 +36363,7 @@ let Big = require('big.js');
 module.exports = {
 
   filteredBalanceTree: function(journal, filter){
-    let txnMonthFilter = this.createMonthFilter(filter);
-    let postingAccountFilter = this.createPostingAccountFilter(filter);
-
-    let filteredAccounts = balancer.balance(journal,
-                                            t => txnMonthFilter(t) && t.posting.some(postingAccountFilter),
-                                            postingAccountFilter)
-
-    let accountArray = Object.keys(filteredAccounts)
-      .map(a => filteredAccounts[a]);
-
+    let accountArray = getFilteredAccountArray(journal, filter, createMonthFilter(filter));
     let b2 = accountArray.sort((a, b) =>
       accountNameHelper.encodeAccountName(a.account)
         .localeCompare(accountNameHelper.encodeAccountName(b.account))
@@ -36202,45 +36390,134 @@ module.exports = {
     return tree.accounts;
   },
 
-   filteredBalance: function(journal, filter){
-      let postingAccountFilter = this.createPostingAccountFilter(filter);
-      let txnMonthFilter = this.createMonthFilter(filter);
-
-      let filteredAccounts = balancer.balance(journal,
-                                t => txnMonthFilter(t) && t.posting.some(postingAccountFilter),
-                                postingAccountFilter)
-
-      let accountArray = Object.keys(filteredAccounts)
-        .map(a => filteredAccounts[a]);
-
-      if(accountArray.length > 0)
-      {
-        var a = accountArray[0];
-        return Math.abs(parseFloat(a.balance.toFixed(2)));
-      }
-      else
-      {
-        return (0.00);
-      }
+  filteredMonthlyBalance: function(journal, filter){
+    return filteredBalance(journal, filter, createMonthFilter(filter));
   },
 
-  createPostingAccountFilter: function(filter){
-      var a =
-          filter != null && filter.account != null ?
-            p => p.account != null &&
-            p.account.some(a => a.toLowerCase().indexOf(filter.account.toLowerCase()) >= 0)
-            :
-            p => true;
-      return a;
+  filteredWeeklyBalance: function(journal, filter){
+    return filteredBalance(journal, filter, createWeekFilter(filter));
   },
-  createMonthFilter: function(filter){
-      var a =
-          filter != null && filter.month != null  ?
-          t => t.date.month == filter.month
-          :
-          t => true;
 
-      return a;
+  getWeekNumber : function(date) {
+    return weekNumberFromDate(date);
+  },
+
+  transactionMatchesFilter: function(t, filter){
+      return isTransactionMatchingTheFilter(t, filter, createMonthFilter(filter));
+  },
+
+  matchingPostings: function(t, filter){
+    let postingAccountFilter = createPostingAccountFilter(filter);
+    return t.posting.filter(p => postingAccountFilter(p));
   }
 };
-},{"../../../src/balance":9,"./account-name-helper":20,"big.js":3}]},{},[19]);
+
+function isTransactionMatchingTheFilter(t, filter, txnDateFilter){
+    let txnPayeeFilter = createPayeeFilter(filter);
+    let postingAccountFilter = createPostingAccountFilter(filter);
+    return txnDateFilter(t) && txnPayeeFilter(t) && t.posting.some(postingAccountFilter);
+}
+
+function getFilteredAccountArray(journal, filter, txnFilter){
+    let postingAccountFilter = createPostingAccountFilter(filter);
+
+    let filteredAccounts = balancer.balance(journal,
+                                            t => isTransactionMatchingTheFilter(t, filter, txnFilter),
+                                            postingAccountFilter)
+
+    return Object.keys(filteredAccounts)
+      .map(a => filteredAccounts[a]);
+}
+
+function filteredBalance(journal, filter, txnFilter){
+  let accountArray = getFilteredAccountArray(journal, filter, txnFilter);
+  let topAccounts = findTopAccounts(accountArray);
+  return accountsTotal(topAccounts);
+}
+
+function findTopAccounts(accounts){
+  return accounts.filter(a => a.account.length == 1);
+}
+
+function accountsTotal(accounts){
+  let sum = accounts.reduce((a, b) => {
+    return {balance: a.balance.plus(b.balance)};
+  }, {balance: Big(0)});
+
+  return parseFloat(sum.balance.toFixed(2));
+}
+
+function createPostingAccountFilter(filter){
+    var a =
+        filter != null && filter.account != null ?
+          p => p.account != null &&
+          accountNameHelper.accountMatches(p.account, filter.account)
+          :
+          p => true;
+    return a;
+}
+
+function createPayeeFilter(filter){
+    var a =
+        filter != null && filter.payee != null && filter.payee != '' ?
+        t => t.payee.toLowerCase().indexOf(filter.payee.toLowerCase()) >= 0
+        :
+        t => true;
+
+    return a;
+}
+
+function createMonthFilter(filter){
+    var a =
+        filter != null && filter.month != null  ?
+        t => t.date.month == filter.month
+        :
+        t => true;
+
+    return a;
+}
+
+function createWeekFilter(filter){
+    var a =
+        filter != null && filter.week != null  ?
+        t => {
+          let txnDate = new Date(t.date.year, t.date.month - 1, t.date.day)
+          return weekNumberFromDate(txnDate).week == filter.week
+        }
+        :
+        t => true;
+
+    return a;
+}
+
+/* For a given date, get the ISO week number
+ *
+ * Based on information at:
+ *
+ *    http://www.merlyn.demon.co.uk/weekcalc.htm#WNR
+ *
+ * Algorithm is to find nearest thursday, it's year
+ * is the year of the week number. Then get weeks
+ * between that date and the first day of that year.
+ *
+ * Note that dates in one year can be weeks of previous
+ * or next year, overlap is up to 3 days.
+ *
+ * e.g. 2014/12/29 is Monday in week  1 of 2015
+ *      2012/1/1   is Sunday in week 52 of 2011
+ */
+function weekNumberFromDate(d) {
+    // Copy date so don't modify original
+    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    // Set to nearest Thursday: current date + 4 - current day number
+    // Make Sunday's day number 7
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
+    // Get first day of year
+    var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+    // Calculate full weeks to nearest Thursday
+    var weekNo = Math.ceil(( ( (d - yearStart) / 86400000) + 1)/7);
+    // Return array of year and week number
+    return {year: d.getUTCFullYear(), week: weekNo};
+}
+
+},{"../../../src/balance":9,"./account-name-helper":23,"big.js":3}]},{},[22]);
