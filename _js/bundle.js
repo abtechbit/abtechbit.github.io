@@ -291,7 +291,7 @@ process.umask = function() { return 0; };
         if(month == todayMonth && day > todayDay){
           break;
         }
-        text += this.transactionsDay(todayYear, month + 1, day);
+        text += this.transactionsDay(todayYear, month + 1, day) + '\n';
       }
     }
     return text;
@@ -303,7 +303,7 @@ process.umask = function() { return 0; };
       let txn = this.transaction();
       t = `${year}/${month}/${day} * ${txn.payee}\n`;
       txn.posting.forEach(p => {
-        t += `  ${p.account}  $${p.amount}\n`
+        t += `  ${p.account} `.padEnd(40) + ` $${p.amount}\n`
       });
       txn.counterPosting.forEach(p => {
         t += `  ${p.account} \n`
@@ -35977,6 +35977,7 @@ var Vue = require('vue');
 var c3 = require('c3');
 
 var balanceFilterHelper = require('../util/balance-filter-helper');
+var formatHelper = require('../util/format-helper');
 
 module.exports = Vue.component('monthly-chart', {
   template: '#chart-template',
@@ -36003,7 +36004,25 @@ module.exports = Vue.component('monthly-chart', {
       deep: true
     },
   },
+  computed: {
+    total: function(){
+      return formatHelper.formattedAmount(this.totalBalance());
+    },
+    average: function(){
+      let today = new Date();
+      let todayMonth = today.getMonth() + 1;
+      return formatHelper.formattedAmount(this.totalBalance()/todayMonth);
+    }
+  },
   methods: {
+    totalBalance: function(){
+      let total = 0.0;
+      for(let i = 1; i <= 12; ++i){
+        total += Math.abs(this.getMonthlyBalance(i));
+      }
+      return total;
+    },
+
     uniqId: function(){
       return 'monthly-chart-' + this._uid;
     },
@@ -36050,14 +36069,15 @@ module.exports = Vue.component('monthly-chart', {
   }
 });
 
-},{"../util/balance-filter-helper":24,"c3":4,"vue":8}],19:[function(require,module,exports){
+},{"../util/balance-filter-helper":24,"../util/format-helper":25,"c3":4,"vue":8}],19:[function(require,module,exports){
 var Vue = require('vue');
 var c3 = require('c3');
 
-var balanceTreeHelper = require('../util/balance-filter-helper');
+var balanceFilterHelper = require('../util/balance-filter-helper');
+var formatHelper = require('../util/format-helper');
 
 module.exports = Vue.component('total-monthly-chart', {
-  template: '#chart-template',
+  template: '#total-monthly-chart-template',
   props: ['journal'],
   data: function(){
     return {
@@ -36075,13 +36095,27 @@ module.exports = Vue.component('total-monthly-chart', {
       deep: true
     },
   },
+  computed: {
+    totalIncome: function(){
+      return formatHelper.formattedAmount(balanceFilterHelper.totalBalance(this.journal, 'Income:'));
+    },
+    totalExpenses: function(){
+      return formatHelper.formattedAmount(balanceFilterHelper.totalBalance(this.journal, 'Expenses:'));
+    },
+    averageMonthlyIncome: function(){
+      return formatHelper.formattedAmount(balanceFilterHelper.totalBalance(this.journal, 'Income:') / 12.0);
+    },
+    averageMonthlyExpenses: function(){
+      return formatHelper.formattedAmount(balanceFilterHelper.totalBalance(this.journal, 'Expenses:')  / 12.0);
+    }
+  },
   methods: {
     uniqId: function(){
       return 'monthly-chart-' + this._uid;
     },
 
     getMonthlyBalance: function(account, month){
-      return balanceTreeHelper.filteredMonthlyBalance(this.journal, {
+      return balanceFilterHelper.filteredMonthlyBalance(this.journal, {
         account: account,
         month: month
       });
@@ -36126,7 +36160,7 @@ module.exports = Vue.component('total-monthly-chart', {
   }
 });
 
-},{"../util/balance-filter-helper":24,"c3":4,"vue":8}],20:[function(require,module,exports){
+},{"../util/balance-filter-helper":24,"../util/format-helper":25,"c3":4,"vue":8}],20:[function(require,module,exports){
 var accountNameHelper = require('../util/account-name-helper');
 var balanceFilterHelper = require('../util/balance-filter-helper');
 var Big = require('big.js');
@@ -36201,6 +36235,7 @@ module.exports = Vue.component('transaction-table', {
 var Vue = require('vue');
 var c3 = require('c3');
 var balanceFilterHelper = require('../util/balance-filter-helper');
+var formatHelper = require('../util/format-helper');
 
 module.exports = Vue.component('weekly-chart', {
   template: '#chart-template',
@@ -36227,7 +36262,25 @@ module.exports = Vue.component('weekly-chart', {
       deep: true
     },
   },
+  computed: {
+    total: function(){
+      return formatHelper.formattedAmount(this.totalBalance());
+    },
+    average: function(){
+      let today = new Date();
+      let todayWeek = balanceFilterHelper.getWeekNumber(today).week;
+      return formatHelper.formattedAmount(this.totalBalance()/todayWeek);
+    }
+  },
   methods: {
+    totalBalance: function(){
+      let total = 0.0;
+      for(let i = 1; i <= 52; ++i){
+        total += Math.abs(this.getWeeklyBalance(i));
+      }
+      return total;
+    },
+
     uniqId: function(){
       return 'weekly-chart-' + this._uid;
     },
@@ -36278,7 +36331,7 @@ module.exports = Vue.component('weekly-chart', {
   },
 });
 
-},{"../util/balance-filter-helper":24,"c3":4,"vue":8}],22:[function(require,module,exports){
+},{"../util/balance-filter-helper":24,"../util/format-helper":25,"c3":4,"vue":8}],22:[function(require,module,exports){
 var parser = require('../../src/parser/journal-parser');
 var journal = require('../../src/journal');
 var sampleGenerator = require('../../generator/generator.util');
@@ -36325,6 +36378,8 @@ var app = new Vue({
     },
 
     createJournal: function(text){
+      this.setSource(text);
+      $('#errors').text('');
       journal.reset();
 
       parser.reset(text)
@@ -36333,11 +36388,18 @@ var app = new Vue({
         while((chunk = parser.next()) != null){
           journal.add(chunk);
         }
+
+        $('#topTab a[href="#transactions"]').tab('show');
       }catch(e){
-        console.log(e);
-        console.log('Failing on line ' + JSON.stringify(e.chunk));
+        $('#errors').text('Failing on line ' + JSON.stringify(e.chunk, null, 2));
       }
     },
+
+    setSource: function(text){
+      Vue.nextTick(function () {
+        $('#file-contents').text(text);
+      });
+    }
   },
 })
 
@@ -36409,6 +36471,10 @@ module.exports = {
   matchingPostings: function(t, filter){
     let postingAccountFilter = createPostingAccountFilter(filter);
     return t.posting.filter(p => postingAccountFilter(p));
+  },
+
+  totalBalance: function(journal, account){
+    return Math.abs(filteredBalance(journal, {account: account}, (t)=> true));
   }
 };
 
@@ -36469,7 +36535,7 @@ function createPayeeFilter(filter){
 
 function createMonthFilter(filter){
     var a =
-        filter != null && filter.month != null  ?
+        filter != null && filter.month != null && filter.month > 0 ?
         t => t.date.month == filter.month
         :
         t => true;
@@ -36520,4 +36586,12 @@ function weekNumberFromDate(d) {
     return {year: d.getUTCFullYear(), week: weekNo};
 }
 
-},{"../../../src/balance":9,"./account-name-helper":23,"big.js":3}]},{},[22]);
+},{"../../../src/balance":9,"./account-name-helper":23,"big.js":3}],25:[function(require,module,exports){
+module.exports = {
+
+  formattedAmount: function(v){
+    let value = v == null || v.toFixed == null ? 0.00 : v.toFixed(2);
+    return parseFloat(value).toLocaleString('en-CA', { style: 'currency', currency: 'CAD' })
+  },
+};
+},{}]},{},[22]);
