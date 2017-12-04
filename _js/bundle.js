@@ -32867,6 +32867,12 @@ var Journal = {
     return this.transactionList.filter(filter);
   },
 
+  getTransactionMonthCount: function(){
+      var allMonths = this.transactionList.map(t => t.date.month);
+      var months = Array.from(new Set(allMonths));
+      return months.length;
+  },
+
   //----------- Internal state
 
   transactionList: [],
@@ -35904,26 +35910,11 @@ var Vue = require('vue');
 
 module.exports = Vue.component('account-filter', {
   template: '#account-filter-template',
-  data: function(){
-    let today = new Date();
-    let todayMonth = today.getMonth() + 1;
-
-    return {
-      filter: {
-        account: 'Expenses',
-        month: todayMonth
-      }
-    };
-  },
-  methods: {
-    updateFilter: function(){
-      this.$emit('input', this.filter);
-    }
-  }
+  props: ['value']
 });
 },{"vue":8}],17:[function(require,module,exports){
 var Vue = require('vue');
-var balanceTreeHelper = require('../util/balance-filter-helper');
+var balanceFilterHelper = require('../util/balance-filter-helper');
 
 
 module.exports = Vue.component('accounts', {
@@ -35956,10 +35947,14 @@ module.exports = Vue.component('accounts', {
       if(this.journal == null){
         return;
       }
-      this.accountTree = balanceTreeHelper.filteredBalanceTree(this.journal, this.filter);
+      this.accountTree = balanceFilterHelper.filteredBalanceTree(this.journal, this.filter);
       if(this.accountTree == null){
         this.accountTree = {};
       }
+    },
+
+    filterByAccount: function(account){
+      this.$emit('account', account)
     },
 
     level: function(){
@@ -36011,7 +36006,7 @@ module.exports = Vue.component('monthly-chart', {
     average: function(){
       let today = new Date();
       let todayMonth = today.getMonth() + 1;
-      return formatHelper.formattedAmount(this.totalBalance()/todayMonth);
+      return formatHelper.formattedAmount(this.totalBalance()/this.monthCount);
     }
   },
   methods: {
@@ -36039,6 +36034,7 @@ module.exports = Vue.component('monthly-chart', {
         data.push(Math.abs(this.getMonthlyBalance(i)));
       }
       this.columnData = [data];
+      this.monthCount = this.journal.getTransactionMonthCount();
       let self = this;
       Vue.nextTick(function () {
         self.createChart();
@@ -36103,11 +36099,12 @@ module.exports = Vue.component('total-monthly-chart', {
       return formatHelper.formattedAmount(balanceFilterHelper.totalBalance(this.journal, 'Expenses:'));
     },
     averageMonthlyIncome: function(){
-      return formatHelper.formattedAmount(balanceFilterHelper.totalBalance(this.journal, 'Income:') / 12.0);
+      return formatHelper.formattedAmount(balanceFilterHelper.totalBalance(this.journal, 'Income:') / this.monthCount);
     },
     averageMonthlyExpenses: function(){
-      return formatHelper.formattedAmount(balanceFilterHelper.totalBalance(this.journal, 'Expenses:')  / 12.0);
-    }
+      return formatHelper.formattedAmount(balanceFilterHelper.totalBalance(this.journal, 'Expenses:')  / this.monthCount);
+    },
+
   },
   methods: {
     uniqId: function(){
@@ -36129,6 +36126,7 @@ module.exports = Vue.component('total-monthly-chart', {
         dataIncome.push(Math.abs(this.getMonthlyBalance('Income', i)));
       }
       this.columnData = [dataExpense, dataIncome];
+      this.monthCount = this.journal.getTransactionMonthCount();
 
       let self = this;
       Vue.nextTick(function () {
@@ -36391,7 +36389,12 @@ var app = new Vue({
 
         $('#topTab a[href="#transactions"]').tab('show');
       }catch(e){
-        $('#errors').text('Failing on line ' + JSON.stringify(e.chunk, null, 2));
+        if(e.chunk == null){
+          $('#errors').text('Error: ' + e.message + JSON.stringify(e, null, 2));
+        } else {
+          $('#errors').text('Failing on line ' + JSON.stringify(e.chunk, null, 2));
+        }
+        console.log(e);
       }
     },
 
@@ -36399,6 +36402,10 @@ var app = new Vue({
       Vue.nextTick(function () {
         $('#file-contents').text(text);
       });
+    },
+
+    updateFilterAccount: function(account){
+      this.filter.account = account;
     }
   },
 })
@@ -36438,7 +36445,8 @@ module.exports = {
         var nextLevel = branchLevel.accounts == null ? null : branchLevel.accounts[n];
         if(nextLevel == null)
         {
-          var nextLevel = {name: n};
+          var fullAccountPath = a.account.slice();
+          var nextLevel = {name: n, fullName: accountNameHelper.encodeAccountName(fullAccountPath)};
           if(branchLevel.accounts == null)
             branchLevel.accounts = {};
           branchLevel.accounts[n] = nextLevel;
