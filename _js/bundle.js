@@ -36116,7 +36116,7 @@ var formatHelper = require('../util/format-helper');
 
 module.exports = Vue.component('monthly-chart', {
   template: '#chart-template',
-  props: ['filter', 'journal'],
+  props: ['filter', 'journal', 'redraw'],
   data: function(){
     return {
       columnData: []
@@ -36138,6 +36138,11 @@ module.exports = Vue.component('monthly-chart', {
       },
       deep: true
     },
+    redraw: {
+      handler:function (){
+        this.chart.flush();
+      },
+    }
   },
   computed: {
     total: function(){
@@ -36182,7 +36187,11 @@ module.exports = Vue.component('monthly-chart', {
     },
 
     createChart: function(){
-      var chart = c3.generate({
+      if(this.chart != null){
+        this.chart.data(this.columnData);
+      }
+
+      this.chart = c3.generate({
           bindto: '#' + this.uniqId(),
           data: {
               columns: this.columnData,
@@ -36214,7 +36223,7 @@ var formatHelper = require('../util/format-helper');
 
 module.exports = Vue.component('total-monthly-chart', {
   template: '#total-monthly-chart-template',
-  props: ['journal'],
+  props: ['journal', 'redraw'],
   data: function(){
     return {
       columnData: []
@@ -36230,6 +36239,11 @@ module.exports = Vue.component('total-monthly-chart', {
       },
       deep: true
     },
+    redraw: {
+      handler:function (){
+        this.chart.flush();
+      },
+    }
   },
   computed: {
     totalIncome: function(){
@@ -36275,7 +36289,12 @@ module.exports = Vue.component('total-monthly-chart', {
     },
 
     createChart: function(){
-      var chart = c3.generate({
+
+      if(this.chart != null){
+        this.chart.data(this.columnData);
+      }
+
+      this.chart = c3.generate({
           bindto: '#' + this.uniqId(),
           data: {
               columns: this.columnData,
@@ -36377,7 +36396,7 @@ var formatHelper = require('../util/format-helper');
 
 module.exports = Vue.component('weekly-chart', {
   template: '#chart-template',
-  props: ['filter', 'journal'],
+  props: ['filter', 'journal', 'redraw'],
   data: function(){
     return {
       columnData: []
@@ -36399,6 +36418,11 @@ module.exports = Vue.component('weekly-chart', {
       },
       deep: true
     },
+    redraw: {
+      handler:function (){
+        this.chart.flush();
+      },
+    }
   },
   computed: {
     total: function(){
@@ -36446,7 +36470,12 @@ module.exports = Vue.component('weekly-chart', {
       var catIds = [];
       for(var i = 1; i <= 52; ++i)
         catIds.push(i);
-      var chart = c3.generate({
+
+      if(this.chart != null){
+        this.chart.data(this.columnData);
+      }
+
+      this.chart = c3.generate({
           bindto: '#' + this.uniqId(),
           data: {
               columns: this.columnData,
@@ -36491,12 +36520,17 @@ var app = new Vue({
       payee: '',
       tag: ''
     },
-    journal: journal
+    journal: journal,
+    redraw: false
   },
   beforeMount: function(){
       var self = this;
       var text = sampleGenerator.generateYearJournal();
       this.createJournal(text);
+  },
+  mounted(){
+    $(this.$refs.accordion).on("show.bs.collapse", this.collapsedGraph)
+    $(this.$refs.tabs).on("shown.bs.tab", this.collapsedGraph)
   },
   methods: {
 
@@ -36547,6 +36581,10 @@ var app = new Vue({
 
     updateFilterAccount: function(account){
       this.filter.account = account;
+    },
+
+    collapsedGraph: function(){
+      this.redraw = !this.redraw;
     }
   },
 })
